@@ -303,6 +303,7 @@ void CSUpdateEditData (uint3 id : SV_DispatchThreadID)
         _DstBuffer.InterlockedMax(28, FloatToSortableUint(bmax.y));
         _DstBuffer.InterlockedMax(32, FloatToSortableUint(bmax.z));
     }
+
     uint sumSel = countbits(valSel);
     uint sumDel = countbits(valDel);
     uint sumCut = countbits(valCut);
@@ -449,6 +450,8 @@ void CSTranslateSelection (uint3 id : SV_DispatchThreadID)
 
 float3 _SelectionCenter;
 float4 _SelectionDeltaRot;
+float4 _QuatLocalToWorld;
+float4 _QuatWorldToLocal;
 ByteAddressBuffer _SplatPosMouseDown;
 ByteAddressBuffer _SplatOtherMouseDown;
 
@@ -460,16 +463,24 @@ void CSRotateSelection (uint3 id : SV_DispatchThreadID)
         return;
     if (!IsSplatSelected(idx))
         return;
-
+    float3x3 LtW = (float3x3)0;
+    LtW[0] = _MatrixObjectToWorld[0].xyz;
+    LtW[1] = _MatrixObjectToWorld[1].xyz;
+    LtW[2] = _MatrixObjectToWorld[2].xyz;
+    float3x3 WtL = (float3x3)0;
+    WtL[0] = _MatrixWorldToObject[0].xyz;
+    WtL[1] = _MatrixWorldToObject[1].xyz;
+    WtL[2] = _MatrixWorldToObject[2].xyz;
     uint posFmt = _SplatFormat & 0xFF;
     if (_SplatChunkCount == 0 && posFmt == VECTOR_FMT_32F)
     {
         uint posStride = 12;
+
         float3 pos = asfloat(_SplatPosMouseDown.Load3(idx * posStride));
         pos -= _SelectionCenter;
-        pos = mul(_MatrixObjectToWorld, float4(pos,1)).xyz;
+        pos = mul(LtW, pos);
         pos = QuatRotateVector(pos, _SelectionDeltaRot);
-        pos = mul(_MatrixWorldToObject, float4(pos,1)).xyz;
+        pos = mul(WtL, pos);
         pos += _SelectionCenter;
         _SplatPos.Store3(idx * posStride, asuint(pos));
     }
@@ -481,18 +492,34 @@ void CSRotateSelection (uint3 id : SV_DispatchThreadID)
         uint otherStride = 4 + 12;
         uint rotVal = _SplatOtherMouseDown.Load(idx * otherStride);
         float4 rot = DecodeRotation(DecodePacked_10_10_10_2(rotVal));
-
+    
         //@TODO: correct rotation
-        rot = QuatMul(rot, _SelectionDeltaRot);
+        // 
+        //rot = QuatMul(_SelectionDeltaRot, rot);
+        // 
+        // change: change the order of the two quaternion.
+        // SelectionDeltaRot describes the rotation of model coords, and rot describes the rotation towards (new) model coords.
+        
+        // T_{WM} * R * T_{MW} * X_M = rot1 * X_M 
+
+        float4 rot1 = QuatMul(_SelectionDeltaRot, _QuatLocalToWorld);
+        rot1 = QuatMul(_QuatWorldToLocal, rot1);
+        rot = QuatMul(rot1, rot);
 
         rotVal = EncodeQuatToNorm10(PackSmallest3Rotation(rot));
         _SplatOther.Store(idx * otherStride, rotVal);
+
+        // rotate SHs
+        float3x3 shRot = CalcRotateMatrixFromQuat(rot1);
+
+
     }
 
     //@TODO: rotate SHs
+
 }
 
-//@TODO: maybe scale the splat scale itself too?
+
 [numthreads(GROUP_SIZE,1,1)]
 void CSScaleSelection (uint3 id : SV_DispatchThreadID)
 {
@@ -506,13 +533,26 @@ void CSScaleSelection (uint3 id : SV_DispatchThreadID)
     if (_SplatChunkCount == 0 && fmt == VECTOR_FMT_32F)
     {
         uint stride = 12;
+
+        // mode 1: scale each axis in same rate
+        float sr = max(max(_SelectionDelta.x, _SelectionDelta.y), _SelectionDelta.z);
+        float3 sr3 = float3(sr, sr, sr);
+        // mode 2: scale each axis independently
+
+        // scale the position vector in world space
         float3 pos = asfloat(_SplatPosMouseDown.Load3(idx * stride));
         pos -= _SelectionCenter;
         pos = mul(_MatrixObjectToWorld, float4(pos,1)).xyz;
-        pos *= _SelectionDelta;
+        pos *= sr;
         pos = mul(_MatrixWorldToObject, float4(pos,1)).xyz;
         pos += _SelectionCenter;
         _SplatPos.Store3(idx * stride, asuint(pos));
+        // scale the spalt
+        stride += 4;
+        uint addr = idx * stride + 4;
+        float3 sc = asfloat(_SplatOtherMouseDown.Load3(addr));
+        sc *= sr;
+        _SplatOther.Store3(addr, asuint(sc));
     }
 }
 

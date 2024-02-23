@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace GaussianSplatting.Editor
 {
-    /* not working correctly yet
+    //not working correctly yet
     [EditorTool("Gaussian Rotate Tool", typeof(GaussianSplatRenderer), typeof(GaussianToolContext))]
     class GaussianRotateTool : GaussianTool
     {
@@ -52,9 +52,10 @@ namespace GaussianSplatting.Editor
             {
                 Matrix4x4 localToWorld = gs.transform.localToWorldMatrix;
                 Matrix4x4 worldToLocal = gs.transform.worldToLocalMatrix;
+                Quaternion quatLocalToWorld = gs.transform.localRotation;
                 var wasModified = gs.editModified;
                 var rotToApply = newRotation;
-                gs.EditRotateSelection(selCenterLocal, localToWorld, worldToLocal, rotToApply);
+                gs.EditRotateSelection(selCenterLocal, localToWorld, worldToLocal, rotToApply, quatLocalToWorld);
                 m_CurrentRotation = newRotation;
                 if (!wasModified)
                     GaussianSplatRendererEditor.RepaintAll();
@@ -66,5 +67,4 @@ namespace GaussianSplatting.Editor
             }
         }
     }
-    */
 }

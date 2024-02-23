@@ -40,6 +40,7 @@ namespace GaussianSplatting.Editor.Utils
                     break;
                 var tokens = line.Split(' ');
                 if (tokens.Length == 3 && tokens[0] == "element" && tokens[1] == "vertex")
+                    // it seems tokens[2] represents the vertex index.
                     vertexCount = int.Parse(tokens[2]);
                 if (tokens.Length == 3 && tokens[0] == "property")
                 {

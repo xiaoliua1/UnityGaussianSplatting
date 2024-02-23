@@ -56,6 +56,8 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 
 		o.pos = quadPos;
 
+		// ScreenParams: Screen information, such as width and height.
+		// the reason of multipling w: o.vertex is a coordinate in CLIP space, where x and y span from -w to w.
 		float2 deltaScreenPos = (quadPos.x * view.axis1 + quadPos.y * view.axis2) * 2 / _ScreenParams.xy;
 		o.vertex = centerClipPos;
 		o.vertex.xy += deltaScreenPos * centerClipPos.w;

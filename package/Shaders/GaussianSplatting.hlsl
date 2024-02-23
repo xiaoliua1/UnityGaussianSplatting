@@ -26,6 +26,20 @@ float4 QuatInverse(float4 q)
     return rcp(dot(q, q)) * q * float4(-1,-1,-1,1);
 }
 
+float3x3 CalcRotateMatrixFromQuat(float4 rot)
+{
+    float x = rot.x;
+    float y = rot.y;
+    float z = rot.z;
+    float w = rot.w;
+    float rt = float3x3(
+        1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y),
+        2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x),
+        2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)
+    );
+    return rt;
+}
+
 float3x3 CalcMatrixFromRotationScale(float4 rot, float3 scale)
 {
     float3x3 ms = float3x3(

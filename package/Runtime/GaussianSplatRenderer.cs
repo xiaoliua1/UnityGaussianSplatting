@@ -253,7 +253,8 @@ namespace GaussianSplatting.Runtime
         // these buffers are only for splat editing, and are lazily created
         GraphicsBuffer m_GpuEditCutouts;
         GraphicsBuffer m_GpuEditCountsBounds;
-        GraphicsBuffer m_GpuEditSelected;
+        // stores bitmap of splats selected or deleted
+        GraphicsBuffer m_GpuEditSelected; 
         GraphicsBuffer m_GpuEditDeleted;
         GraphicsBuffer m_GpuEditSelectedMouseDown; // selection state at start of operation
         GraphicsBuffer m_GpuEditPosMouseDown; // position state at start of operation
@@ -306,6 +307,8 @@ namespace GaussianSplatting.Runtime
             public static readonly int MatrixP = Shader.PropertyToID("_MatrixP");
             public static readonly int MatrixObjectToWorld = Shader.PropertyToID("_MatrixObjectToWorld");
             public static readonly int MatrixWorldToObject = Shader.PropertyToID("_MatrixWorldToObject");
+            public static readonly int QuatLocalToWorld = Shader.PropertyToID("_QuatLocalToWorld");
+            public static readonly int QuatWorldToLocal = Shader.PropertyToID("_QuatWorldToLocal");
             public static readonly int VecScreenParams = Shader.PropertyToID("_VecScreenParams");
             public static readonly int VecWorldSpaceCameraPos = Shader.PropertyToID("_VecWorldSpaceCameraPos");
             public static readonly int SelectionCenter = Shader.PropertyToID("_SelectionCenter");
@@ -473,7 +476,7 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeIntParam(cs, Props.SplatCutoutsCount, m_Cutouts?.Length ?? 0);
             cmb.SetComputeBufferParam(cs, kernelIndex, Props.SplatCutouts, m_GpuEditCutouts);
         }
-
+        //SortAndRenderSplats->
         internal void SetAssetDataOnMaterial(MaterialPropertyBlock mat)
         {
             mat.SetBuffer(Props.SplatPos, m_GpuPosData);
@@ -676,10 +679,17 @@ namespace GaussianSplatting.Runtime
             m_CSSplatUtilities.Dispatch((int)KernelIndices.InitEditData, 1, 1, 1);
 
             using CommandBuffer cmb = new CommandBuffer();
+
+            // set asset data before using kernel function in compute shader
             SetAssetDataOnCS(cmb, KernelIndices.UpdateEditData);
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.UpdateEditData, Props.DstBuffer, m_GpuEditCountsBounds);
             cmb.SetComputeIntParam(m_CSSplatUtilities, Props.BufferSize, m_GpuEditSelected.count);
+
             m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.UpdateEditData, out uint gsX, out _, out _);
+
+            // gsX equals 1024 according to compute shader.
+            // num of thread groups = [m_GpuEditSelected.count/1024]
+            // each thread group contains 1024 threads, so num_thread equals to m_GpuEditSelected.count. each thread processes information of 32 splats. 
             cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.UpdateEditData, (int)((m_GpuEditSelected.count+gsX-1)/gsX), 1, 1);
             Graphics.ExecuteCommandBuffer(cmb);
 
@@ -808,16 +818,28 @@ namespace GaussianSplatting.Runtime
             SetAssetDataOnCS(cmb, KernelIndices.TranslateSelection);
 
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionDelta, localSpacePosDelta);
-
+            //Debug.Log(localSpacePosDelta);
             DispatchUtilsAndExecute(cmb, KernelIndices.TranslateSelection, m_SplatCount);
             UpdateEditCountsAndBounds();
+
             editModified = true;
         }
 
-        public void EditRotateSelection(Vector3 localSpaceCenter, Matrix4x4 localToWorld, Matrix4x4 worldToLocal, Quaternion rotation)
+        public static Vector4 QuatInverse(Vector4 q)
+        {
+            float dotProduct = Vector4.Dot(q, q);
+            float reciprocalDot = 1.0f / dotProduct;
+
+            Vector4 result = reciprocalDot * new Vector4(-q.x, -q.y, -q.z, q.w);
+            return result;
+        }
+        // change: add a parameter quatLocalToWorld to calculate rotation in model space.
+        public void EditRotateSelection(Vector3 localSpaceCenter, Matrix4x4 localToWorld, Matrix4x4 worldToLocal, Quaternion rotation, Quaternion quatLocalToWorld)
         {
             if (!EnsureEditingBuffers()) return;
             if (m_GpuEditPosMouseDown == null || m_GpuEditOtherMouseDown == null) return; // should have captured initial state
+
+            Vector4 QuatWorldToLocal = QuatInverse(new Vector4(quatLocalToWorld.x, quatLocalToWorld.y, quatLocalToWorld.z, quatLocalToWorld.w));
 
             using var cmb = new CommandBuffer { name = "SplatRotateSelection" };
             SetAssetDataOnCS(cmb, KernelIndices.RotateSelection);
@@ -828,6 +850,9 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixObjectToWorld, localToWorld);
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixWorldToObject, worldToLocal);
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionDeltaRot, new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
+            // add definition in Props!
+            cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.QuatLocalToWorld, new Vector4(quatLocalToWorld.x, quatLocalToWorld.y, quatLocalToWorld.z, quatLocalToWorld.w));
+            cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.QuatWorldToLocal, QuatWorldToLocal);
 
             DispatchUtilsAndExecute(cmb, KernelIndices.RotateSelection, m_SplatCount);
             UpdateEditCountsAndBounds();
@@ -844,6 +869,9 @@ namespace GaussianSplatting.Runtime
             SetAssetDataOnCS(cmb, KernelIndices.ScaleSelection);
 
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ScaleSelection, Props.SplatPosMouseDown, m_GpuEditPosMouseDown);
+            // change:
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.ScaleSelection, Props.SplatOtherMouseDown, m_GpuEditOtherMouseDown);
+            // end
             cmb.SetComputeVectorParam(m_CSSplatUtilities, Props.SelectionCenter, localSpaceCenter);
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixObjectToWorld, localToWorld);
             cmb.SetComputeMatrixParam(m_CSSplatUtilities, Props.MatrixWorldToObject, worldToLocal);

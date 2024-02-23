@@ -12,6 +12,7 @@ namespace GaussianSplatting.Editor
     {
         public override void OnToolGUI(EditorWindow window)
         {
+            //Debug.Log("Move Tool1");
             var gs = GetRenderer();
             if (!gs || !CanBeEdited() || !HasSelection())
                 return;
@@ -21,6 +22,7 @@ namespace GaussianSplatting.Editor
             var selCenterLocal = GetSelectionCenterLocal();
             var selCenterWorld = tr.TransformPoint(selCenterLocal);
             var newPosWorld = Handles.DoPositionHandle(selCenterWorld, Tools.handleRotation);
+            
             if (EditorGUI.EndChangeCheck())
             {
                 var newPosLocal = tr.InverseTransformPoint(newPosWorld);

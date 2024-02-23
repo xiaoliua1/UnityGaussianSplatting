@@ -36,10 +36,11 @@ namespace GaussianSplatting.Runtime
             {
                 sd.typeAndFlags = ~0u;
             }
-            return sd;
+            return sd; 
         }
 
 #if UNITY_EDITOR
+        // 绘制裁剪区域的包围盒
         public void OnDrawGizmos()
         {
             Gizmos.matrix = transform.localToWorldMatrix;

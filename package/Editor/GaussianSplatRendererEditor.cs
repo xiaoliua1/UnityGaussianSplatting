@@ -213,8 +213,9 @@ namespace GaussianSplatting.Editor
             if (totalSplats > GaussianSplatAsset.kMaxSplats)
                 return;
             var targetGs = (GaussianSplatRenderer) target;
-
             int copyDstOffset = targetGs.splatCount;
+            Debug.Log(copyDstOffset);
+
             targetGs.EditSetSplatCount(totalSplats);
             foreach (var obj in targets)
             {

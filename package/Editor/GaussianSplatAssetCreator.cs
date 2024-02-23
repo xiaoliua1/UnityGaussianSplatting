@@ -248,12 +248,13 @@ namespace GaussianSplatting.Editor
         unsafe void CreateAsset()
         {
             m_ErrorMessage = null;
+            // file path is not empty
             if (string.IsNullOrWhiteSpace(m_InputFile))
             {
                 m_ErrorMessage = $"Select input PLY file";
                 return;
             }
-
+            // 
             if (string.IsNullOrWhiteSpace(m_OutputFolder) || !m_OutputFolder.StartsWith("Assets/"))
             {
                 m_ErrorMessage = $"Output folder must be within project, was '{m_OutputFolder}'";
@@ -271,6 +272,7 @@ namespace GaussianSplatting.Editor
             }
 
             float3 boundsMin, boundsMax;
+            // Initialize parameters of IJob
             var boundsJob = new CalcBoundsJob
             {
                 m_BoundsMin = &boundsMin,
@@ -279,6 +281,7 @@ namespace GaussianSplatting.Editor
             };
             boundsJob.Schedule().Complete();
 
+            // WHY use Morton Code?
             EditorUtility.DisplayProgressBar(kProgressTitle, "Morton reordering", 0.05f);
             ReorderMorton(inputSplats, boundsMin, boundsMax);
 
@@ -372,13 +375,14 @@ namespace GaussianSplatting.Editor
             // reorder SHs
             NativeArray<float> floatData = verticesRawData.Reinterpret<float>(1);
             ReorderSHs(splatCount, (float*)floatData.GetUnsafePtr());
-
+            // Reinterpret<T>(n): regard sizeof struct T as n indices 
             return verticesRawData.Reinterpret<InputSplatData>(1);
         }
 
         [BurstCompile]
         static unsafe void ReorderSHs(int splatCount, float* data)
         {
+            // float32，占4个字节，因此角标为size/4
             int splatStride = UnsafeUtility.SizeOf<InputSplatData>() / 4;
             int shStartOffset = 9, shCount = 15;
             float* tmp = stackalloc float[shCount * 3];
@@ -391,7 +395,8 @@ namespace GaussianSplatting.Editor
                     tmp[j * 3 + 1] = data[idx + j + shCount];
                     tmp[j * 3 + 2] = data[idx + j + shCount * 2];
                 }
-
+                // 原本三维球谐系数按行存储，形状为3*15，不同球谐系数的同一分量连续存储；
+                // 调整后，同一球谐系数的3个分量连续存储。
                 for (int j = 0; j < shCount * 3; ++j)
                 {
                     data[idx + j] = tmp[j];
@@ -520,7 +525,7 @@ namespace GaussianSplatting.Editor
         {
             shs = default;
             shIndices = default;
-
+            // combine SHs together
             int shCount = GaussianSplatAsset.GetSHCount(format, splatData.Length);
             if (shCount >= splatData.Length) // no need to cluster, just use raw data
                 return;
@@ -539,6 +544,7 @@ namespace GaussianSplatting.Editor
 
             float t0 = Time.realtimeSinceStartup;
             NativeArray<float> shData = new(splatData.Length * kShDim, Allocator.Persistent);
+            // Get SH data from splats data
             GatherSHs(splatData.Length, (InputSplatData*) splatData.GetUnsafeReadOnlyPtr(), (float*) shData.GetUnsafePtr());
 
             NativeArray<float> shMeans = new(shCount * kShDim, Allocator.Persistent);
@@ -1138,7 +1144,7 @@ namespace GaussianSplatting.Editor
         {
             if (!doImport)
                 return null;
-
+            // curPath: currentPath; search file bottom-up
             string camerasPath;
             while (true)
             {
